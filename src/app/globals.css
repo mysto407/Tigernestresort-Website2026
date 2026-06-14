@@ -44,6 +44,43 @@ body {
   display: none;
 }
 
+/* Dynamic "ink" for fixed chrome (hero top bar, hamburger): white by
+   default, flips to near-black while the homepage cream cutout frame is in
+   view. Driven by data-hero-frame="visible" on <html> (set in page.tsx). */
+:root {
+  --chrome-ink: #ffffff;
+}
+html[data-hero-frame="visible"] {
+  --chrome-ink: #15130f;
+}
+.chrome-ink {
+  color: var(--chrome-ink);
+  transition: color 0.35s ease;
+}
+.chrome-ink-50 {
+  color: color-mix(in srgb, var(--chrome-ink) 50%, transparent);
+  transition: color 0.35s ease;
+}
+.chrome-ink-bar {
+  background-color: var(--chrome-ink);
+  transition: background-color 0.35s ease;
+}
+/* White logo art inverts to black while the frame is in view. */
+.chrome-logo {
+  transition: filter 0.35s ease;
+}
+html[data-hero-frame="visible"] .chrome-logo {
+  filter: invert(1);
+}
+/* Legibility shadow only while the chrome is white over the photo. */
+.hero-chrome-shadow {
+  filter: drop-shadow(0 2px 14px rgba(0, 0, 0, 0.55));
+  transition: filter 0.35s ease;
+}
+html[data-hero-frame="visible"] .hero-chrome-shadow {
+  filter: none;
+}
+
 @layer base {
   h1, h2, h3, h4 {
     font-family: var(--font-serif);

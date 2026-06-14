@@ -3,7 +3,6 @@ import { Cormorant_Garamond, Gloock, League_Script } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
-import Footer from "@/components/layout/Footer";
 import AlignmentGuide from "@/components/dev/AlignmentGuide";
 
 const cormorant = Cormorant_Garamond({
@@ -49,7 +48,6 @@ export default function RootLayout({
       <body className="min-h-screen flex flex-col bg-cream text-bark antialiased">
         <Navbar />
         <main className="flex-1">{children}</main>
-        <Footer />
         <AlignmentGuide />
       </body>
     </html>

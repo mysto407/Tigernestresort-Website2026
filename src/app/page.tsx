@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { animate, stagger } from "animejs";
 import { ROOMS, ATTRACTIONS, CONTACT } from "@/lib/data";
+import BookingBar from "@/components/ui/BookingBar";
+import BhutanMap from "@/components/ui/BhutanMap";
+import FluidImage, { type FluidImageHandle } from "@/components/ui/FluidImage";
+import { BHUTAN_PATH, BHUTAN_TRANSFORM } from "@/lib/bhutan-path";
 
 const EASE = "cubicBezier(0.22, 1, 0.36, 1)";
 
@@ -77,7 +81,10 @@ const EXPERIENCES = [
 
 export default function HomePage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const photoRef = useRef<HTMLDivElement>(null);
+  const cutoutRef = useRef<HTMLDivElement>(null);
+  const holeRef = useRef<SVGGElement>(null);
+  const fluidRef = useRef<FluidImageHandle>(null);
+  const heroImageRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const estRef = useRef<HTMLParagraphElement>(null);
   const ctaRef = useRef<HTMLDivElement>(null);
@@ -87,26 +94,96 @@ export default function HomePage() {
   const tip = useRef({ x: 0, y: 0 });
   const [activeExp, setActiveExp] = useState<number | null>(null);
 
-  // Smooth horizontal scroll
+  // Smooth horizontal scroll + pinned Bhutan-cutout zoom intro
   useEffect(() => {
     document.body.style.overflow = "hidden";
     const el = containerRef.current;
     if (!el) return;
 
+    const ZOOM_DISTANCE = 1100; // wheel travel needed to fully open the cutout
+    const HOLE_BASE_SCALE = 0.58; // resting hole size (cream margin around it)
+    const HOLE_MAX_FACTOR = 7; // growth factor at zoom=1 — hole engulfs screen
+
     let target = 0;
     let current = 0;
+    let zoomTarget = 0; // 0 = cutout closed (hero hidden), 1 = fully revealed
+    let zoom = 0;
     let raf: number;
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      const delta = e.deltaY + e.deltaX;
       const max = el.scrollWidth - el.clientWidth;
-      target = Math.max(0, Math.min(max, target + e.deltaY + e.deltaX));
+
+      if (delta > 0) {
+        // Forward: fully open the cutout before any horizontal panning.
+        if (zoomTarget < 1) {
+          zoomTarget = Math.min(1, zoomTarget + delta / ZOOM_DISTANCE);
+          return;
+        }
+        // Wait for the open animation to settle so the overlay is hidden
+        // before the hero is allowed to move (prevents desync artefacts).
+        if (zoom < 0.999) return;
+        target = Math.max(0, Math.min(max, target + delta));
+        return;
+      }
+
+      // Backward: pan all the way back to the hero first, then re-close.
+      // Gate on the *actual* scroll position, not the target, so the cutout
+      // never reappears while the hero is still panned sideways.
+      if (current > 0.5) {
+        target = Math.max(0, Math.min(max, target + delta));
+        return;
+      }
+      zoomTarget = Math.max(0, zoomTarget + delta / ZOOM_DISTANCE);
     };
 
     const tick = () => {
       current += (target - current) * 0.1;
       if (Math.abs(target - current) < 0.1) current = target;
       el.scrollLeft = current;
+
+      zoom += (zoomTarget - zoom) * 0.1;
+      if (Math.abs(zoomTarget - zoom) < 0.001) zoom = zoomTarget;
+
+      const cut = cutoutRef.current;
+      const hole = holeRef.current;
+      if (cut && hole) {
+        // Grow the hole inside the mask; the overlay layer itself never
+        // transforms, so it always stays exactly viewport-sized.
+        const holeScale = HOLE_BASE_SCALE * (1 + zoom * (HOLE_MAX_FACTOR - 1));
+        hole.setAttribute(
+          "transform",
+          `translate(512 512) scale(${holeScale}) translate(-512 -512)`
+        );
+        const opacity = 1 - Math.max(0, (zoom - 0.75) / 0.25); // fade at the end
+        cut.style.opacity = `${opacity}`;
+        // Fully remove the overlay when open or whenever the hero is panned;
+        // being viewport-fixed it could otherwise sit over other sections.
+        cut.style.display = zoom >= 0.999 || current > 1 ? "none" : "block";
+      }
+
+      // The noise clears as soon as the cutout frame leaves the view —
+      // the hole engulfs the screen well before zoom reaches 1, so map
+      // full clarity to that earlier point.
+      const FRAME_GONE_ZOOM = 0.65;
+      fluidRef.current?.setIntensity(1 - Math.min(1, zoom / FRAME_GONE_ZOOM));
+
+      // The hero image recedes to 10% as the cutout frame zooms in.
+      const HERO_MIN_SCALE = 0.7;
+      if (heroImageRef.current) {
+        const heroScale = 1 - zoom * (1 - HERO_MIN_SCALE);
+        heroImageRef.current.style.transform = `scale(${heroScale})`;
+      }
+
+      // Fixed chrome (top bar, hamburger) flips to dark ink while the cream
+      // frame is in view — white text would be invisible on it. CSS reacts
+      // to this attribute (globals.css chrome-ink rules).
+      const frameState = zoom < 0.4 && current <= 1 ? "visible" : "hidden";
+      if (document.documentElement.dataset.heroFrame !== frameState) {
+        document.documentElement.dataset.heroFrame = frameState;
+      }
+
       raf = requestAnimationFrame(tick);
     };
 
@@ -117,18 +194,12 @@ export default function HomePage() {
       document.body.style.overflow = "";
       window.removeEventListener("wheel", onWheel);
       cancelAnimationFrame(raf);
+      delete document.documentElement.dataset.heroFrame;
     };
   }, []);
 
   // Hero animations on mount
   useEffect(() => {
-    if (photoRef.current)
-      animate(photoRef.current, {
-        y: ["100%", "0%"],
-        duration: 750,
-        ease: "out(3)",
-      });
-
     if (estRef.current)
       animate(estRef.current, { opacity: [0, 1], duration: 1000, delay: 200 });
 
@@ -233,85 +304,116 @@ export default function HomePage() {
       className="hide-scrollbar flex flex-row h-screen overflow-x-scroll overflow-y-hidden"
     >
       {/* ── HERO ── */}
-      <section className="relative shrink-0 w-screen h-screen bg-black overflow-hidden flex">
-        <div className="relative w-1/2 h-full overflow-hidden">
-          <div ref={photoRef} className="relative w-full h-full">
-            <Image
-              src="/tnrPhotos/1.jpg"
-              alt="Tiger's Nest Resort"
-              fill
-              className="object-contain object-center"
-              priority
-            />
-          </div>
+      <section className="relative shrink-0 w-screen h-screen overflow-hidden bg-black">
+        {/* Full-bleed hero image — revealed through the cutout, and scaled
+            down to 30% as the frame zooms in (driven from the scroll loop). */}
+        <div
+          ref={heroImageRef}
+          className="absolute inset-0"
+          style={{ willChange: "transform" }}
+        >
+          <Image
+            src="/tnrPhotos/1.jpg"
+            alt="Tiger's Nest Resort"
+            fill
+            className="object-contain object-center"
+            sizes="100vw"
+            priority
+          />
+          {/* Distortion layer — covers the static image; intensity is driven
+              from the scroll effect (1 - zoom). variant="fluid" is also
+              available for a mesh-warp look. */}
+          <FluidImage
+            ref={fluidRef}
+            src="/tnrPhotos/1.jpg"
+            variant="noise"
+            className="absolute inset-0 h-full w-full"
+          />
+          <div className="absolute inset-0 bg-linear-to-b from-black/50 via-black/10 to-black/45" />
         </div>
 
-        <div className="w-1/2 flex items-center px-10 md:px-12 -translate-y-4">
-          <h1
-            ref={titleRef}
-            className="font-gloock leading-none text-white uppercase tracking-tight flex flex-col gap-[0.5vw]"
+        {/* Top bar — wordmark centered, in line with the menu.
+            Sits above the cutout (z-30); its ink flips black/white with the
+            frame state (see globals.css chrome-ink rules). */}
+        <div className="absolute top-0 inset-x-0 z-30 grid grid-cols-3 items-center px-6 lg:px-8 py-6 lg:py-8 hero-chrome-shadow">
+          <p
+            ref={estRef}
+            style={{ opacity: 0 }}
+            className="justify-self-start font-mono text-[10px] tracking-[0.3em] uppercase chrome-ink-50"
           >
-            <div className="overflow-hidden">
-              <span data-reveal className="block text-[11.5vw]">Tiger&apos;s</span>
-            </div>
-            <div className="overflow-hidden">
-              <span data-reveal className="block text-[11.5vw]">Nest</span>
-            </div>
-            <div className="overflow-hidden">
-              <span data-reveal className="block text-[7vw]">Resort</span>
-            </div>
-            <div className="overflow-hidden mt-2">
-              <span data-reveal className="block font-sans font-normal text-[1.1vw] tracking-[0.3em] text-white/60">
-                Paro, Bhutan
-              </span>
-            </div>
-          </h1>
-        </div>
+            Est. 2010
+          </p>
 
-        <p
-          ref={estRef}
-          style={{ opacity: 0 }}
-          className="absolute top-7 left-7 font-mono text-[10px] tracking-[0.3em] uppercase text-white/50"
-        >
-          Est. 2010
-        </p>
+          <div className="justify-self-center flex items-center gap-3 md:gap-4">
+            <div className="overflow-hidden shrink-0" ref={logoRef}>
+              <div data-reveal>
+                <Image
+                  src="/tnrPhotos/logowhite copy.png"
+                  alt="Tiger's Nest Resort"
+                  width={200}
+                  height={301}
+                  className="h-11 md:h-13 w-auto object-contain chrome-logo"
+                />
+              </div>
+            </div>
 
-        <div
-          ref={ctaRef}
-          className="absolute bottom-28 right-0 px-6 md:px-12 flex flex-col items-end gap-3"
-        >
-          <div className="overflow-hidden">
-            <a
-              data-reveal
-              href={`https://wa.me/${CONTACT.whatsapp.replace(/\D/g, "")}?text=Hello%2C%20I%20would%20like%20to%20make%20a%20reservation`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-sans font-normal text-sm tracking-[0.3em] uppercase text-white border border-white/50 px-7 py-4 hover:bg-white hover:text-black transition-colors block"
+            <h1
+              ref={titleRef}
+              className="text-left font-gloock uppercase chrome-ink leading-none tracking-tight"
             >
-              Book — 50% Off
-            </a>
+              <div className="overflow-hidden">
+                <span data-reveal className="block text-xl md:text-2xl lg:text-3xl">
+                  Tiger&apos;s Nest Resort
+                </span>
+              </div>
+              <div className="overflow-hidden mt-1.5">
+                <span data-reveal className="block text-center font-sans font-normal text-[9px] md:text-[10px] tracking-[0.35em] chrome-ink-50">
+                  Paro, Bhutan
+                </span>
+              </div>
+            </h1>
+          </div>
+
+          <span aria-hidden className="justify-self-end" />
+        </div>
+
+        {/* Booking bar */}
+        <div ref={ctaRef} className="absolute bottom-8 inset-x-0 z-10 flex justify-center px-6">
+          <div data-reveal>
+            <BookingBar className="shadow-2xl shadow-black/40" />
           </div>
         </div>
 
-        {/* Hero logo */}
+        {/* Bhutan cutout overlay — solid cream with a Bhutan-shaped hole.
+            position:fixed = locked to the viewport, so it can never misalign
+            with the screen regardless of scroll state. On scroll, the HOLE
+            inside the mask grows (not the layer itself), so there is no giant
+            composited layer for the browser to trash on tab switches. */}
         <div
-          className="absolute right-0 px-6 md:px-12 z-10 pointer-events-none flex flex-col items-end gap-3 mix-blend-difference"
-          style={{ bottom: "7rem" }}
+          ref={cutoutRef}
+          aria-hidden
+          className="fixed inset-0 z-20 pointer-events-none"
         >
-          <div className="overflow-hidden" ref={logoRef}>
-            <div data-reveal>
-              <Image
-                src="/tnrPhotos/logowhite copy.png"
-                alt="Tiger's Nest Resort"
-                width={180}
-                height={100}
-                className="object-contain"
-              />
-            </div>
-          </div>
-          <div className="font-mono text-sm px-7 py-4 opacity-0 select-none" aria-hidden="true">
-            Book — 50% Off
-          </div>
+          <svg
+            className="h-full w-full"
+            viewBox="0 0 1024 1024"
+            preserveAspectRatio="xMidYMid slice"
+          >
+            <defs>
+              <mask id="hero-bhutan-hole">
+                <rect width="1024" height="1024" fill="#fff" />
+                {/* Hole group — transform driven each frame from the scroll
+                    effect; starts at the resting scale. */}
+                <g
+                  ref={holeRef}
+                  transform="translate(512 512) scale(0.58) translate(-512 -512)"
+                >
+                  <path d={BHUTAN_PATH} transform={BHUTAN_TRANSFORM} fill="#000" />
+                </g>
+              </mask>
+            </defs>
+            <rect width="1024" height="1024" fill="#faf7f0" mask="url(#hero-bhutan-hole)" />
+          </svg>
         </div>
       </section>
 
@@ -489,6 +591,45 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+
+      {/* ── LOCATION — Bhutan map cutout ── */}
+      <section className="shrink-0 w-screen h-screen bg-cream flex flex-col">
+        <div className="sticky left-0 z-20 w-screen flex items-center px-10 py-4 border-b border-black/10 bg-cream/80 backdrop-blur-sm">
+          <p className="font-mono text-sm tracking-[0.3em] uppercase text-black/30">Location</p>
+        </div>
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 items-center">
+          {/* Copy */}
+          <div data-animate style={{ opacity: 0 }} className="flex flex-col justify-center gap-7 px-14 lg:px-20">
+            <p className="font-mono text-[10px] tracking-[0.3em] uppercase text-black/35">
+              Kingdom of Bhutan
+            </p>
+            <h2 className="font-gloock uppercase leading-[0.95] tracking-tight text-black text-[7vw] lg:text-[3.4vw]">
+              In the heart
+              <br />
+              of the Himalayas
+            </h2>
+            <p className="font-serif text-lg leading-relaxed text-black/55 max-w-md">
+              Tucked into the Paro valley at the foot of the sacred Tiger&apos;s
+              Nest, our resort sits among Bhutan&apos;s last great Himalayan
+              wilderness — a kingdom of monasteries, prayer flags and
+              mist-wreathed peaks.
+            </p>
+            <div className="flex items-center gap-4 border-t border-black/10 pt-6 max-w-md">
+              <span className="font-mono text-[10px] tracking-[0.3em] uppercase text-black/30">
+                Find us
+              </span>
+              <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-black/60">
+                {CONTACT.address}
+              </span>
+            </div>
+          </div>
+
+          {/* Cutout */}
+          <div data-animate style={{ opacity: 0 }} className="relative flex items-center justify-center p-8 lg:p-14">
+            <BhutanMap className="aspect-1024/610 w-full max-w-[48vw]" />
+          </div>
+        </div>
+      </section>
 
       {/* ── BOOK ── */}
       <section data-stagger className="shrink-0 w-screen h-screen bg-black px-14 flex flex-col justify-center">

@@ -3,13 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_LINKS } from "@/lib/data";
-import { CONTACT } from "@/lib/data";
+import { NAV_LINKS, CONTACT, SOCIAL } from "@/lib/data";
+import BookingBar from "@/components/ui/BookingBar";
 
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
   const isHome = pathname === "/";
+
+  const waNumber = CONTACT.whatsapp.replace(/\D/g, "");
 
   return (
     <>
@@ -33,16 +35,18 @@ export default function Navbar() {
             onClick={() => setMenuOpen(true)}
             aria-label="Open menu"
           >
-            <span className={`block w-7 h-[1.5px] ${isHome ? "bg-white" : "bg-cream"}`} />
-            <span className={`block w-7 h-[1.5px] ${isHome ? "bg-white" : "bg-cream"}`} />
-            <span className={`block w-7 h-[1.5px] ${isHome ? "bg-white" : "bg-cream"}`} />
+            {/* On home the bars follow the chrome ink (dark while the cream
+                cutout frame is in view, white once it zooms away). */}
+            <span className={`block w-7 h-[1.5px] ${isHome ? "chrome-ink-bar" : "bg-cream"}`} />
+            <span className={`block w-7 h-[1.5px] ${isHome ? "chrome-ink-bar" : "bg-cream"}`} />
+            <span className={`block w-7 h-[1.5px] ${isHome ? "chrome-ink-bar" : "bg-cream"}`} />
           </button>
         </div>
       </header>
 
       {/* Full-screen menu overlay */}
       {menuOpen && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        <div className="fixed inset-0 z-100 bg-black flex flex-col">
           <div className="flex items-start justify-between p-6 lg:p-8">
             <Link href="/" onClick={() => setMenuOpen(false)} className="flex flex-col leading-none">
               <span className="font-gloock text-xl text-white uppercase tracking-wide">Tiger&apos;s Nest</span>
@@ -61,34 +65,68 @@ export default function Navbar() {
             </button>
           </div>
 
-          <nav className="flex-1 flex flex-col justify-center px-10 lg:px-20 gap-2">
-            {NAV_LINKS.map((link, i) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMenuOpen(false)}
-                className={`font-sans font-black text-[12vw] md:text-[8vw] uppercase leading-none tracking-tight transition-colors duration-150 ${
-                  pathname === link.href ? "text-white" : "text-white/25 hover:text-white"
-                }`}
-              >
-                <span className="font-mono text-[10px] text-white/20 mr-4 align-middle">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                {link.label}
-              </Link>
-            ))}
-          </nav>
+          {/* Body — nav on the left, contact + social on the right */}
+          <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto">
+            <nav className="flex-1 flex flex-col justify-center px-10 lg:px-20 gap-2 py-10">
+              {NAV_LINKS.map((link, i) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMenuOpen(false)}
+                  className={`font-sans font-black text-[12vw] md:text-[7vw] uppercase leading-none tracking-tight transition-colors duration-150 ${
+                    pathname === link.href ? "text-white" : "text-white/25 hover:text-white"
+                  }`}
+                >
+                  <span className="font-mono text-[10px] text-white/20 mr-4 align-middle">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
 
-          <div className="px-10 lg:px-20 pb-12 border-t border-white/10 pt-6">
-            <a
-              href={`https://wa.me/${CONTACT.whatsapp.replace(/\D/g, "")}?text=Hello%2C%20I%20would%20like%20to%20make%20a%20reservation`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-4 font-mono text-[10px] tracking-[0.3em] uppercase text-white/50 hover:text-white transition-colors"
-            >
-              <span className="w-8 h-px bg-white/30" />
-              Book via WhatsApp — 50% Off
-            </a>
+            <aside className="shrink-0 lg:w-85 flex flex-col justify-center gap-10 px-10 lg:px-16 py-10 border-t lg:border-t-0 lg:border-l border-white/10">
+              {/* Contact */}
+              <div className="flex flex-col gap-3">
+                <h4 className="font-mono text-[10px] tracking-[0.3em] uppercase text-white/40">
+                  Contact
+                </h4>
+                <p className="font-serif text-base text-white/70 leading-relaxed">
+                  {CONTACT.address}
+                </p>
+                <a
+                  href={`tel:${waNumber}`}
+                  className="font-sans text-sm text-white/70 hover:text-white transition-colors"
+                >
+                  {CONTACT.phone}
+                </a>
+              </div>
+
+              {/* Social */}
+              <div className="flex flex-col gap-3">
+                <h4 className="font-mono text-[10px] tracking-[0.3em] uppercase text-white/40">
+                  Follow
+                </h4>
+                <div className="flex flex-col gap-2">
+                  {SOCIAL.map((s) => (
+                    <a
+                      key={s.label}
+                      href={s.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-sans text-sm text-white/70 hover:text-white transition-colors"
+                    >
+                      {s.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </aside>
+          </div>
+
+          {/* Booking bar */}
+          <div className="flex justify-center px-6 pt-2 pb-10">
+            <BookingBar />
           </div>
         </div>
       )}

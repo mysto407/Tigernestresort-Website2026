@@ -173,3 +173,9 @@ export const CONTACT = {
   address: "Satsam Chorten, Paro, Bhutan",
   offer: "Book directly to get 50% OFF",
 };
+
+// Social links — replace the placeholder URLs with the real profiles.
+export const SOCIAL = [
+  { label: "Instagram", href: "https://instagram.com/" },
+  { label: "Facebook", href: "https://facebook.com/" },
+];
