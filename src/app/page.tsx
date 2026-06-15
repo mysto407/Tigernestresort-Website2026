@@ -6,7 +6,6 @@ import { animate, stagger } from "animejs";
 import { ROOMS, ATTRACTIONS, CONTACT } from "@/lib/data";
 import BookingBar from "@/components/ui/BookingBar";
 import BhutanMap from "@/components/ui/BhutanMap";
-import FluidImage, { type FluidImageHandle } from "@/components/ui/FluidImage";
 import { BHUTAN_PATH, BHUTAN_TRANSFORM } from "@/lib/bhutan-path";
 
 const EASE = "cubicBezier(0.22, 1, 0.36, 1)";
@@ -83,13 +82,18 @@ export default function HomePage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const cutoutRef = useRef<HTMLDivElement>(null);
   const holeRef = useRef<SVGGElement>(null);
-  const fluidRef = useRef<FluidImageHandle>(null);
   const heroImageRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const estRef = useRef<HTMLParagraphElement>(null);
   const ctaRef = useRef<HTMLDivElement>(null);
   const logoRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const messageRef = useRef<HTMLDivElement>(null);
+  const messageInnerRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  // Set true by the Discover button; consumed once by the scroll loop to
+  // open the cutout (reveal the hero) without any actual scrolling.
+  const revealRef = useRef(false);
   const mouse = useRef({ x: 0, y: 0 });
   const tip = useRef({ x: 0, y: 0 });
   const [activeExp, setActiveExp] = useState<number | null>(null);
@@ -139,6 +143,12 @@ export default function HomePage() {
     };
 
     const tick = () => {
+      // Discover button: a one-shot request to fully open the cutout.
+      if (revealRef.current) {
+        zoomTarget = 1;
+        revealRef.current = false;
+      }
+
       current += (target - current) * 0.1;
       if (Math.abs(target - current) < 0.1) current = target;
       el.scrollLeft = current;
@@ -163,11 +173,21 @@ export default function HomePage() {
         cut.style.display = zoom >= 0.999 || current > 1 ? "none" : "block";
       }
 
-      // The noise clears as soon as the cutout frame leaves the view —
-      // the hole engulfs the screen well before zoom reaches 1, so map
-      // full clarity to that earlier point.
-      const FRAME_GONE_ZOOM = 0.65;
-      fluidRef.current?.setIntensity(1 - Math.min(1, zoom / FRAME_GONE_ZOOM));
+      // Intro message + photo scrim — fade out early (well before the frame
+      // leaves) and are removed once the cutout opens or the hero is panned,
+      // so they never sit over the revealed hero or other sections.
+      const introOpacity = `${1 - Math.min(1, zoom / 0.33)}`;
+      const introHidden = zoom >= 0.45 || current > 1;
+      const msg = messageRef.current;
+      if (msg) {
+        msg.style.opacity = introOpacity;
+        msg.style.display = introHidden ? "none" : "block";
+      }
+      const scrim = scrimRef.current;
+      if (scrim) {
+        scrim.style.opacity = introOpacity;
+        scrim.style.display = introHidden ? "none" : "block";
+      }
 
       // The hero image recedes to 10% as the cutout frame zooms in.
       const HERO_MIN_SCALE = 0.7;
@@ -202,6 +222,15 @@ export default function HomePage() {
   useEffect(() => {
     if (estRef.current)
       animate(estRef.current, { opacity: [0, 1], duration: 1000, delay: 200 });
+
+    if (messageInnerRef.current)
+      animate(messageInnerRef.current, {
+        opacity: [0, 1],
+        y: ["24px", "0px"],
+        duration: 1100,
+        ease: "out(3)",
+        delay: 400,
+      });
 
     if (titleRef.current)
       animate(titleRef.current.querySelectorAll("[data-reveal]"), {
@@ -313,36 +342,30 @@ export default function HomePage() {
           style={{ willChange: "transform" }}
         >
           <Image
-            src="/tnrPhotos/1.jpg"
+            src="/tnrPhotos/1a.jpg"
             alt="Tiger's Nest Resort"
             fill
             className="object-contain object-center"
             sizes="100vw"
             priority
           />
-          {/* Distortion layer — covers the static image; intensity is driven
-              from the scroll effect (1 - zoom). variant="fluid" is also
-              available for a mesh-warp look. */}
-          <FluidImage
-            ref={fluidRef}
-            src="/tnrPhotos/1.jpg"
-            variant="noise"
-            className="absolute inset-0 h-full w-full"
-          />
-          <div className="absolute inset-0 bg-linear-to-b from-black/50 via-black/10 to-black/45" />
         </div>
+
+        {/* Photo scrim — semi-transparent dark layer over the whole hero
+            photo, sitting behind the cream cutout (z-10 < cutout z-20). It
+            darkens the photo seen through the Bhutan hole so the intro copy
+            reads; fades and is removed with the message (scroll loop). */}
+        <div
+          ref={scrimRef}
+          aria-hidden
+          className="absolute inset-0 z-10 bg-black/40 pointer-events-none"
+        />
 
         {/* Top bar — wordmark centered, in line with the menu.
             Sits above the cutout (z-30); its ink flips black/white with the
             frame state (see globals.css chrome-ink rules). */}
         <div className="absolute top-0 inset-x-0 z-30 grid grid-cols-3 items-center px-6 lg:px-8 py-6 lg:py-8 hero-chrome-shadow">
-          <p
-            ref={estRef}
-            style={{ opacity: 0 }}
-            className="justify-self-start font-mono text-[10px] tracking-[0.3em] uppercase chrome-ink-50"
-          >
-            Est. 2010
-          </p>
+          <span aria-hidden className="justify-self-start" />
 
           <div className="justify-self-center flex items-center gap-3 md:gap-4">
             <div className="overflow-hidden shrink-0" ref={logoRef}>
@@ -384,6 +407,15 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Est. — bottom-right of the hero photo */}
+        <p
+          ref={estRef}
+          style={{ opacity: 0 }}
+          className="absolute bottom-8 right-6 lg:right-8 z-30 font-mono text-[10px] tracking-[0.3em] uppercase chrome-ink-50 hero-chrome-shadow"
+        >
+          Est. 2010
+        </p>
+
         {/* Bhutan cutout overlay — solid cream with a Bhutan-shaped hole.
             position:fixed = locked to the viewport, so it can never misalign
             with the screen regardless of scroll state. On scroll, the HOLE
@@ -414,6 +446,41 @@ export default function HomePage() {
             </defs>
             <rect width="1024" height="1024" fill="#faf7f0" mask="url(#hero-bhutan-hole)" />
           </svg>
+        </div>
+
+        {/* Intro message — centered over the Bhutan cutout. Dark ink so it
+            reads on the cream frame; opacity/visibility driven from the scroll
+            loop so it fades out as the map zooms open. The Discover button
+            requests that zoom (reveal the hero) without any scrolling.
+            absolute (not fixed) so it fills the relative hero section and
+            centres reliably. */}
+        <div
+          ref={messageRef}
+          className="absolute left-1/2 top-1/2 z-30 w-full max-w-xl -translate-x-1/2 -translate-y-1/2 px-6 pointer-events-none"
+        >
+          <div
+            ref={messageInnerRef}
+            style={{ opacity: 0 }}
+            className="pointer-events-auto flex flex-col items-center text-center [text-shadow:_0_1px_20px_rgba(0,0,0,0.5)]"
+          >
+            <h2 className="font-gloock uppercase text-white leading-[1] tracking-tight text-2xl sm:text-3xl lg:text-[2rem]">
+              Wake up in
+              <br />
+              the Himalayas
+            </h2>
+            <p className="mt-3 max-w-xs font-serif text-xs sm:text-sm leading-relaxed text-white/80">
+              Tiger&apos;s Nest Resort, perched above the Paro valley.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                revealRef.current = true;
+              }}
+              className="mt-6 rounded-full bg-[#faf7f0] px-9 py-3.5 font-mono text-[10px] tracking-[0.35em] uppercase text-[#15130f] [text-shadow:none] transition-colors hover:bg-white"
+            >
+              Discover
+            </button>
+          </div>
         </div>
       </section>
 
@@ -626,7 +693,7 @@ export default function HomePage() {
 
           {/* Cutout */}
           <div data-animate style={{ opacity: 0 }} className="relative flex items-center justify-center p-8 lg:p-14">
-            <BhutanMap className="aspect-1024/610 w-full max-w-[48vw]" />
+            <BhutanMap className="aspect-1024/593 w-full max-w-[48vw]" />
           </div>
         </div>
       </section>

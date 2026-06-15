@@ -1,56 +1,51 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { BHUTAN_PATH, BHUTAN_TRANSFORM } from "@/lib/bhutan-path";
+import {
+  BHUTAN_DISTRICTS,
+  BHUTAN_DISTRICTS_VIEWBOX,
+  MAP_MARKERS,
+} from "@/lib/bhutan-districts";
 
-// Marker positions expressed directly in the 1024×1024 viewBox
-// (north = up, west = left). Tuned visually against the silhouette.
-interface Marker {
-  id: string;
-  label?: string;
-  sub?: string;
-  x: number;
-  y: number;
-  primary?: boolean;
-}
-
-const MARKERS: Marker[] = [
-  { id: "paro", label: "Tiger's Nest Resort", sub: "Paro", x: 200, y: 540, primary: true },
-  { id: "thimphu", label: "Thimphu", x: 270, y: 527 },
-];
-
-// Cropped viewBox — focuses on the silhouette's vertical band (≈249–775
-// in full-frame coords) plus breathing room, so the wide, short map of
-// Bhutan isn't marooned in empty space.
-const VIEWBOX = "0 205 1024 610";
-
-// How far (in viewBox units) the revealed image drifts behind the cutout,
-// and how far the whole map tilts, at the cursor's furthest reach.
-const IMAGE_DRIFT = 42;
+// How far the whole map tilts toward the cursor, at the cursor's furthest
+// reach, when `interactive` is enabled.
 const TILT_DEG = 6;
 const LERP = 0.08;
 
+// viewBox is "0 0 1024 593" — keep these in sync for the terrain fill rect.
+const VB_W = 1024;
+const VB_H = 593;
+
+// District name labels (viewBox coords) giving the resort its western
+// neighbours for context. Paro sits just south of the resort pin.
+const DISTRICT_LABELS = [
+  { name: "PARO", x: 206, y: 334 },
+  { name: "HAA", x: 150, y: 372 },
+];
+
 interface BhutanMapProps {
-  /** Image revealed through the cutout. */
-  src?: string;
   className?: string;
+  /**
+   * Cursor-driven tilt. Off by default — the map renders static. Flip on to
+   * reuse the interaction elsewhere.
+   */
+  interactive?: boolean;
 }
 
 export default function BhutanMap({
-  src = "/tnrPhotos/tigersnest1.jpg",
   className = "",
+  interactive = false,
 }: BhutanMapProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const tiltRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<SVGImageElement>(null);
   const target = useRef({ x: 0, y: 0 });
   const current = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
+    if (!interactive) return;
     const wrap = wrapRef.current;
     const tilt = tiltRef.current;
-    const img = imgRef.current;
-    if (!wrap || !tilt || !img) return;
+    if (!wrap || !tilt) return;
 
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) return;
@@ -74,16 +69,8 @@ export default function BhutanMap({
       current.current.x += (target.current.x - current.current.x) * LERP;
       current.current.y += (target.current.y - current.current.y) * LERP;
       const { x, y } = current.current;
-
-      // Image drifts opposite the cursor — parallax depth inside the cutout.
-      img.setAttribute(
-        "transform",
-        `translate(${-x * IMAGE_DRIFT} ${-y * IMAGE_DRIFT})`
-      );
-      // The whole map tilts toward the cursor for a tactile, 3D feel.
       tilt.style.transform =
         `rotateY(${x * TILT_DEG}deg) rotateX(${-y * TILT_DEG}deg)`;
-
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -93,125 +80,168 @@ export default function BhutanMap({
       wrap.removeEventListener("mouseleave", onLeave);
       cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [interactive]);
+
+  const { paro, thimphu } = MAP_MARKERS;
 
   return (
     <div
       ref={wrapRef}
       className={`relative ${className}`}
-      style={{ perspective: "1400px" }}
+      style={interactive ? { perspective: "1400px" } : undefined}
     >
       <div
         ref={tiltRef}
         className="relative h-full w-full"
-        style={{ transformStyle: "preserve-3d", willChange: "transform" }}
+        style={
+          interactive
+            ? { transformStyle: "preserve-3d", willChange: "transform" }
+            : undefined
+        }
       >
         <svg
-          viewBox={VIEWBOX}
+          viewBox={BHUTAN_DISTRICTS_VIEWBOX}
           className="h-full w-full overflow-visible"
           role="img"
-          aria-label="Map of Bhutan marking Tiger's Nest Resort in Paro"
+          aria-label="Map of Bhutan's dzongkhags (districts), marking Tiger's Nest Resort in Paro"
         >
           <defs>
-            <path id="bt-shape" d={BHUTAN_PATH} transform={BHUTAN_TRANSFORM} />
-            <clipPath id="bt-clip">
-              <use href="#bt-shape" />
+            {/* Hypsometric terrain tint — snow-capped Himalayan north (top)
+                grading down to forested southern lowlands (bottom). */}
+            <linearGradient id="bt-terrain" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#edeae0" />
+              <stop offset="18%" stopColor="#d8ccaf" />
+              <stop offset="42%" stopColor="#c2bd92" />
+              <stop offset="70%" stopColor="#9bac74" />
+              <stop offset="100%" stopColor="#86a062" />
+            </linearGradient>
+
+            {/* Soft directional relief — light from the north-west. */}
+            <linearGradient id="bt-relief" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.22" />
+              <stop offset="50%" stopColor="#ffffff" stopOpacity="0" />
+              <stop offset="100%" stopColor="#000000" stopOpacity="0.12" />
+            </linearGradient>
+
+            {/* Union of every district = the country silhouette. */}
+            <clipPath id="bt-country">
+              {BHUTAN_DISTRICTS.map((district) => (
+                <path key={district.name} d={district.d} />
+              ))}
             </clipPath>
-            <radialGradient id="bt-vignette" cx="42%" cy="44%" r="62%">
-              <stop offset="0%" stopColor="#000" stopOpacity="0" />
-              <stop offset="100%" stopColor="#000" stopOpacity="0.45" />
-            </radialGradient>
+
+            {/* Lifts the landmass off the cream panel. */}
+            <filter id="bt-lift" x="-8%" y="-8%" width="116%" height="124%">
+              <feDropShadow
+                dx="0"
+                dy="4"
+                stdDeviation="7"
+                floodColor="#1a1814"
+                floodOpacity="0.18"
+              />
+            </filter>
           </defs>
 
-          {/* Base fill — reads as a shape before the photo decodes. */}
-          <use href="#bt-shape" fill="#0f0e0c" />
-
-          {/* Revealed imagery, clipped to the country outline. */}
-          <g clipPath="url(#bt-clip)">
-            <image
-              ref={imgRef}
-              href={src}
-              x={-90}
-              y={-90}
-              width={1204}
-              height={1204}
-              preserveAspectRatio="xMidYMid slice"
-              style={{ willChange: "transform" }}
-            />
-            <rect x="0" y="0" width="1024" height="1024" fill="url(#bt-vignette)" />
+          {/* Terrain fill, clipped to the country outline. */}
+          <g filter="url(#bt-lift)">
+            <g clipPath="url(#bt-country)">
+              <rect x="0" y="0" width={VB_W} height={VB_H} fill="url(#bt-terrain)" />
+              <rect x="0" y="0" width={VB_W} height={VB_H} fill="url(#bt-relief)" />
+            </g>
           </g>
 
-          {/* Crisp outline on top of the cutout. */}
-          <use
-            href="#bt-shape"
-            fill="none"
-            stroke="#1a1814"
-            strokeWidth={1.25}
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-            opacity="0.55"
-          />
+          {/* District fills + boundaries. Paro (the resort's district) is
+              tinted so it reads as "you are here". */}
+          {BHUTAN_DISTRICTS.map((district) => {
+            const isParo = district.name === "Paro";
+            return (
+              <path
+                key={district.name}
+                d={district.d}
+                fill={isParo ? "rgba(26,24,20,0.12)" : "transparent"}
+                stroke="#4a4332"
+                strokeWidth={isParo ? 1.4 : 0.85}
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+                opacity={isParo ? 0.85 : 0.6}
+              >
+                <title>{district.name}</title>
+              </path>
+            );
+          })}
 
-          {/* Location markers. */}
-          {MARKERS.map((m) =>
-            m.primary ? (
-              <g key={m.id}>
-                {/* Pulsing halo. */}
-                <circle cx={m.x} cy={m.y} r="9" fill="#ffffff">
-                  <animate attributeName="r" values="9;30" dur="2.6s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" values="0.5;0" dur="2.6s" repeatCount="indefinite" />
-                </circle>
-                {/* Connector. */}
-                <line
-                  x1={m.x}
-                  y1={m.y - 12}
-                  x2={m.x}
-                  y2={m.y - 56}
-                  stroke="#ffffff"
-                  strokeWidth={1.5}
-                  vectorEffect="non-scaling-stroke"
-                  opacity="0.85"
-                />
-                {/* Label chip — opaque, so it reads over both the cutout and the panel. */}
-                <g transform={`translate(${m.x - 180} ${m.y - 148})`}>
-                  <rect width="360" height="92" rx="10" fill="#15130f" opacity="0.92" />
-                  <text
-                    x="180"
-                    y="40"
-                    textAnchor="middle"
-                    className="fill-white font-sans"
-                    style={{ fontSize: 30, fontWeight: 900, letterSpacing: "0.01em" }}
-                  >
-                    {m.label}
-                  </text>
-                  {m.sub && (
-                    <text
-                      x="180"
-                      y="69"
-                      textAnchor="middle"
-                      className="fill-white/55 font-mono"
-                      style={{ fontSize: 16, letterSpacing: "0.34em" }}
-                    >
-                      {m.sub.toUpperCase()}
-                    </text>
-                  )}
-                </g>
-                {/* Pin. */}
-                <circle cx={m.x} cy={m.y} r="8" fill="#ffffff" stroke="#15130f" strokeWidth="2" />
-              </g>
-            ) : (
-              <circle
-                key={m.id}
-                cx={m.x}
-                cy={m.y}
-                r="5"
-                fill="#ffffff"
-                opacity="0.6"
-                stroke="#15130f"
-                strokeWidth="1"
-              />
-            )
-          )}
+          {/* District name labels (Paro, Haa) for western context. */}
+          {DISTRICT_LABELS.map((label) => (
+            <text
+              key={label.name}
+              x={label.x}
+              y={label.y}
+              textAnchor="middle"
+              className="fill-[#1a1814] font-mono"
+              style={{ fontSize: 16, letterSpacing: "0.24em", opacity: 0.65 }}
+            >
+              {label.name}
+            </text>
+          ))}
+
+          {/* Thimphu — secondary pin. */}
+          <g>
+            <circle cx={thimphu.x} cy={thimphu.y} r="6" fill="#1a1814" />
+            <circle cx={thimphu.x} cy={thimphu.y} r="6" fill="none" stroke="#faf7f0" strokeWidth="1.5" />
+            <text
+              x={thimphu.x + 14}
+              y={thimphu.y + 6}
+              className="fill-[#1a1814] font-mono"
+              style={{ fontSize: 17, letterSpacing: "0.22em" }}
+            >
+              THIMPHU
+            </text>
+          </g>
+
+          {/* Paro / Tiger's Nest Resort — primary pin with callout. */}
+          <g>
+            {/* Pulsing halo. */}
+            <circle cx={paro.x} cy={paro.y} r="9" fill="#1a1814">
+              <animate attributeName="r" values="9;30" dur="2.6s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.45;0" dur="2.6s" repeatCount="indefinite" />
+            </circle>
+            {/* Connector. */}
+            <line
+              x1={paro.x}
+              y1={paro.y - 12}
+              x2={paro.x}
+              y2={paro.y - 58}
+              stroke="#1a1814"
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+              opacity="0.85"
+            />
+            {/* Label chip. */}
+            <g transform={`translate(${paro.x - 180} ${paro.y - 150})`}>
+              <rect width="360" height="92" rx="10" fill="#15130f" />
+              <text
+                x="180"
+                y="40"
+                textAnchor="middle"
+                className="fill-white font-sans"
+                style={{ fontSize: 30, fontWeight: 900, letterSpacing: "0.01em" }}
+              >
+                Tiger&apos;s Nest Resort
+              </text>
+              <text
+                x="180"
+                y="69"
+                textAnchor="middle"
+                className="fill-white/55 font-mono"
+                style={{ fontSize: 16, letterSpacing: "0.34em" }}
+              >
+                PARO
+              </text>
+            </g>
+            {/* Pin. */}
+            <circle cx={paro.x} cy={paro.y} r="8" fill="#ffffff" stroke="#15130f" strokeWidth="2.5" />
+            <circle cx={paro.x} cy={paro.y} r="3" fill="#15130f" />
+          </g>
         </svg>
       </div>
     </div>

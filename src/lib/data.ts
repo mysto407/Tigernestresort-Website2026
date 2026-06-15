@@ -44,11 +44,11 @@ export const ROOMS: Room[] = [
     capacity: 2,
     image: "/tnrPhotos/37.jpg",
     images: [
+      "/tnrPhotos/rooms/Suit4.jpg",
       "/tnrPhotos/37.jpg",
       "/tnrPhotos/rooms/Suit1.jpg",
       "/tnrPhotos/rooms/Suit2.jpg",
       "/tnrPhotos/rooms/Suit3.jpg",
-      "/tnrPhotos/rooms/Suit4.jpg",
     ],
     features: [
       "King-size bed",
